@@ -74,7 +74,9 @@ jobs:
           KEYSTORE_B64: ${{ secrets.APK_KEYSTORE_B64 }}
           KS_PASS: ${{ secrets.APK_KEYSTORE_PASS }}
         run: |
-          echo "$KEYSTORE_B64" | base64 -d > keystore.jks
+          printf '%s' "$KEYSTORE_B64" | tr -d '[:space:]' | base64 -d > keystore.jks
+          [ -s keystore.jks ]
+          KS_PASS=$(printf '%s' "$KS_PASS" | tr -d '[:space:]')
           APK=$(ls apks/*.apk)
           "$ANDROID_HOME/build-tools/35.0.0/zipalign" -f 4 "$APK" aligned.apk
           "$ANDROID_HOME/build-tools/35.0.0/apksigner" sign \
