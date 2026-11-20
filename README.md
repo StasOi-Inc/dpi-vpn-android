@@ -13,17 +13,14 @@
 
 ## APK
 
-Сборка полностью автоматизирована: push в `main` запускает GitHub Actions, готовые APK выгружаются в артефакты workflow и дублируются в папку `apk/`.
+Сборка полностью автоматизирована: теги `byedpi-v*` и `tgws-v*` запускают GitHub Actions, APK подписывается секретным keystore и публикуется в [Releases](https://github.com/StasOi/dpi-vpn-android/releases). Копии подписанных APK лежат в папке `apk/`.
 
-- **ByeDPIAndroid**: `assembleRelease`, 4 ABI (armeabi-v7a, arm64-v8a, x86, x86_64).
-- **tg-ws-proxy**: `assembleUniversalRelease` (arm64-v8a + armeabi-v7a; есть отдельные flavors `arm32`/`arm64`).
+- **ByeDPIAndroid**: `assembleRelease`, 4 ABI (armeabi-v7a, arm64-v8a, x86, x86_64) → [Releases](https://github.com/StasOi/dpi-vpn-android/releases/tag/byedpi-v1.2.0), `apk/ByeDPIAndroid-1.2.0-release-signed.apk`.
+- **tg-ws-proxy**: `assembleUniversalRelease` (arm64-v8a + armeabi-v7a; есть отдельные flavors `arm32`/`arm64`) → [Releases](https://github.com/StasOi/dpi-vpn-android/releases/tag/tgws-v1.2.3), `apk/tg-ws-proxy-1.2.3-release-signed.apk`.
 
-APK из CI **unsigned** — для установки подпишите локально:
+Сертификат подписи (SHA-256): `a96c4abd4e7af46688c21f53fe56c602479cc64a655682ac9fddaff555c2c718` (CN=dpi-vpn-android, OU=selfsign, O=StasOi). Проверить установленный APK:
 
 ```bash
-keytool -genkeypair -v -keystore selfsign.keystore -alias selfsign -keyalg RSA -keysize 2048 -validity 10000
-zipalign -f 4 app-release-unsigned.apk aligned.apk
-apksigner sign --ks selfsign.keystore --ks-key-alias selfsign --out signed.apk aligned.apk
 apksigner verify --print-certs signed.apk
 ```
 
