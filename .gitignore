@@ -1,0 +1,25 @@
+# Build outputs
+ByeDPIAndroid/.gradle/
+ByeDPIAndroid/build/
+ByeDPIAndroid/app/build/
+tg-ws-proxy-android/.gradle/
+tg-ws-proxy-android/.kotlin/
+tg-ws-proxy-android/build/
+tg-ws-proxy-android/app/build/
+tg-ws-proxy-android/target/
+
+# IDE
+.idea/
+*.iml
+
+# Local config (contains SDK path, keystore credentials)
+local.properties
+
+# Native libs are built from Rust sources by build_so.sh / CI
+tg-ws-proxy-android/app/src/main/jniLibs/*.so
+tg-ws-proxy-android/app/src/main/jniLibs/*/*.so
+
+# Keystores - never commit
+*.keystore
+*.jks
+keystore-info.txt
