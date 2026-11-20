@@ -57,6 +57,11 @@ jobs:
           name: byedpi-release-unsigned
           path: apks
 
+      - name: Remove legacy asset
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release delete-asset "${{ github.ref_name }}" signed.apk --yes || true
+
       - name: Sign APK
         env:
           KEYSTORE_B64: ${{ secrets.APK_KEYSTORE_B64 }}
@@ -66,17 +71,19 @@ jobs:
           [ -s keystore.jks ]
           KS_PASS=$(printf '%s' "$KS_PASS" | tr -d '[:space:]')
           APK=$(ls apks/*.apk)
+          VERSION="${GITHUB_REF_NAME#byedpi-v}"
+          NAME="ByeDPIAndroid-${VERSION}-release-signed.apk"
           "$ANDROID_HOME/build-tools/34.0.0/zipalign" -f 4 "$APK" aligned.apk
           "$ANDROID_HOME/build-tools/34.0.0/apksigner" sign \
             --ks keystore.jks --ks-key-alias selfsign \
             --ks-pass "pass:$KS_PASS" --key-pass "pass:$KS_PASS" \
-            --out signed.apk aligned.apk
-          "$ANDROID_HOME/build-tools/34.0.0/apksigner" verify --print-certs signed.apk
+            --out "$NAME" aligned.apk
+          "$ANDROID_HOME/build-tools/34.0.0/apksigner" verify --print-certs "$NAME"
 
       - name: Create GitHub release with signed APK
         uses: softprops/action-gh-release@v2
         with:
-          files: signed.apk
+          files: ByeDPIAndroid-*-release-signed.apk
           name: ByeDPI ${{ github.ref_name }}
           body: Signed release build (universal APK, all ABIs). Built by GitHub Actions.
 
