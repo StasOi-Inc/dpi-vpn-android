@@ -3,6 +3,7 @@ name: Build tg-ws-proxy APK
 on:
   push:
     branches: [ main ]
+    tags: [ 'tgws-v*' ]
     paths:
       - 'tg-ws-proxy-android/**'
       - '.github/workflows/tgws-release.yml'
@@ -54,3 +55,37 @@ jobs:
         with:
           name: tg-ws-proxy-universal-release-unsigned
           path: tg-ws-proxy-android/app/build/outputs/apk/universal/release/*.apk
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/tgws-v')
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download built APK
+        uses: actions/download-artifact@v4
+        with:
+          name: tg-ws-proxy-universal-release-unsigned
+          path: apks
+
+      - name: Sign APK
+        env:
+          KEYSTORE_B64: ${{ secrets.APK_KEYSTORE_B64 }}
+          KS_PASS: ${{ secrets.APK_KEYSTORE_PASS }}
+        run: |
+          echo "$KEYSTORE_B64" | base64 -d > keystore.jks
+          APK=$(ls apks/*.apk)
+          "$ANDROID_HOME/build-tools/35.0.0/zipalign" -f 4 "$APK" aligned.apk
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" sign \
+            --ks keystore.jks --ks-key-alias selfsign \
+            --ks-pass "pass:$KS_PASS" --key-pass "pass:$KS_PASS" \
+            --out signed.apk aligned.apk
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --print-certs signed.apk
+
+      - name: Create GitHub release with signed APK
+        uses: softprops/action-gh-release@v2
+        with:
+          files: signed.apk
+          name: tg-ws-proxy ${{ github.ref_name }}
+          body: Signed release build (universal APK). Built by GitHub Actions.
