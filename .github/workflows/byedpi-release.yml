@@ -29,8 +29,8 @@ jobs:
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
 
-      - name: Install NDK and CMake
-        run: sdkmanager --install "ndk;25.2.9519653" "cmake;3.22.1"
+      - name: Install SDK components
+        run: sdkmanager --install "platforms;android-34" "build-tools;34.0.0" "ndk;25.2.9519653" "cmake;3.22.1"
 
       - name: Build release APK
         run: ./gradlew assembleRelease --no-daemon --stacktrace
@@ -40,3 +40,10 @@ jobs:
           APK=$(ls app/build/outputs/apk/release/*.apk)
           ls -la "$APK"
           $ANDROID_HOME/build-tools/34.0.0/aapt2 dump badging "$APK" | head -3
+
+      - name: Upload unsigned APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: byedpi-release-unsigned
+          path: ByeDPIAndroid/app/build/outputs/apk/release/*.apk
+
