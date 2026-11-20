@@ -26,11 +26,10 @@ jobs:
           java-version: '17'
           cache: gradle
 
-      - name: Setup Android SDK
-        uses: android-actions/setup-android@v3
-
       - name: Install SDK components
-        run: sdkmanager --install "platforms;android-35" "build-tools;35.0.0" "ndk;25.2.9519653"
+        run: |
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null || true
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --install "platforms;android-35" "build-tools;35.0.0" "ndk;25.2.9519653"
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
