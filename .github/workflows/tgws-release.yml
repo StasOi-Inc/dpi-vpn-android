@@ -69,6 +69,7 @@ jobs:
       - name: Remove legacy asset
         env:
           GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
         run: gh release delete-asset "${{ github.ref_name }}" signed.apk --yes || true
 
       - name: Sign APK
