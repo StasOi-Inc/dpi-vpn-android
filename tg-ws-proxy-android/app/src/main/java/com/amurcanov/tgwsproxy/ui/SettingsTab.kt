@@ -5,11 +5,17 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.content.ActivityNotFoundException
 import android.net.Uri
+import android.os.Build
 import android.os.PowerManager
 import android.widget.Toast
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
@@ -26,7 +32,10 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
@@ -447,6 +456,10 @@ fun SettingsTab(
 
         Spacer(Modifier.height(12.dp))
 
+        AppearanceSection(settingsStore = settingsStore)
+
+        Spacer(Modifier.height(12.dp))
+
         AppSectionCard {
             Column(
                 modifier = Modifier.fillMaxWidth(),
@@ -564,6 +577,169 @@ private fun PoolChip(
     }
 }
 
+@Composable
+private fun AppearanceSection(settingsStore: SettingsStore) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val themeMode by settingsStore.themeMode.collectAsStateWithLifecycle(initialValue = "system")
+    val isDynamicColor by settingsStore.isDynamicColor.collectAsStateWithLifecycle(initialValue = true)
+    val themePalette by settingsStore.themePalette.collectAsStateWithLifecycle(initialValue = "indigo")
+
+    val supportsDynamicColor = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
+    val showDynamicColorOn = isDynamicColor && supportsDynamicColor
+    val showPalettes = !showDynamicColorOn
+
+    AppSectionCard {
+        Column(
+            modifier = Modifier.fillMaxWidth(),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Icon(
+                    painterResource(com.amurcanov.tgwsproxy.R.drawable.ic_palette), null,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(20.dp)
+                )
+                Text(
+                    stringResource(com.amurcanov.tgwsproxy.R.string.appearance),
+                    style = MaterialTheme.typography.titleSmall,
+                    color = MaterialTheme.colorScheme.primary,
+                    fontWeight = FontWeight.SemiBold
+                )
+            }
+
+            Text(
+                stringResource(com.amurcanov.tgwsproxy.R.string.theme),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.padding(start = 8.dp, bottom = 4.dp)
+            )
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                val themeOptions = listOf(
+                    "system" to com.amurcanov.tgwsproxy.R.string.theme_system,
+                    "light" to com.amurcanov.tgwsproxy.R.string.theme_light,
+                    "dark" to com.amurcanov.tgwsproxy.R.string.theme_dark
+                )
+                themeOptions.forEach { (id, labelRes) ->
+                    PoolChip(
+                        label = stringResource(labelRes),
+                        selected = themeMode == id,
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        scope.launch { settingsStore.saveThemeMode(id) }
+                    }
+                }
+            }
+
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f))
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(
+                    modifier = Modifier.weight(1f),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Text(
+                        stringResource(com.amurcanov.tgwsproxy.R.string.dynamic_colors),
+                        style = MaterialTheme.typography.titleSmall,
+                        color = MaterialTheme.colorScheme.primary,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                }
+                Switch(
+                    checked = showDynamicColorOn,
+                    onCheckedChange = { enabled ->
+                        scope.launch { settingsStore.saveDynamicColor(enabled) }
+                    },
+                    enabled = supportsDynamicColor
+                )
+            }
+
+            AnimatedVisibility(visible = showPalettes) {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f))
+                    Text(
+                        stringResource(com.amurcanov.tgwsproxy.R.string.palette),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.padding(start = 8.dp, bottom = 4.dp)
+                    )
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceEvenly
+                    ) {
+                        PaletteCircle("indigo", 0xFF5B588D, themePalette) { pal ->
+                            scope.launch { settingsStore.saveThemePalette(pal) }
+                        }
+                        PaletteCircle("forest", 0xFF5F5D68, themePalette) { pal ->
+                            scope.launch { settingsStore.saveThemePalette(pal) }
+                        }
+                        PaletteCircle("espresso", 0xFF6D4C41, themePalette) { pal ->
+                            scope.launch { settingsStore.saveThemePalette(pal) }
+                        }
+                    }
+                }
+            }
+
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f))
+
+            val prefs = context.getSharedPreferences("lang_prefs", android.content.Context.MODE_PRIVATE)
+            val currentLang = prefs.getString("app_language", "ru") ?: "ru"
+            Text(
+                "Language / Язык",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.padding(start = 8.dp, bottom = 4.dp)
+            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                val langOptions = listOf("ru" to "Русский", "en" to "English")
+                langOptions.forEach { (code, label) ->
+                    PoolChip(
+                        label = label,
+                        selected = currentLang == code,
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        prefs.edit().putString("app_language", code).apply()
+                        (context as? android.app.Activity)?.recreate()
+                    }
+                }
+            }
+        }
+    }
+}
+
+
+@Composable
+private fun PaletteCircle(
+    paletteId: String,
+    colorHex: Long,
+    selectedId: String,
+    onClick: (String) -> Unit
+) {
+    val isSelected = paletteId == selectedId
+    Box(
+        modifier = Modifier
+            .size(30.dp)
+            .clip(CircleShape)
+            .background(Color(colorHex))
+            .clickable { onClick(paletteId) }
+            .then(
+                if (isSelected) Modifier.border(3.dp, MaterialTheme.colorScheme.primary, CircleShape)
+                else Modifier
+            )
+    )
+}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable

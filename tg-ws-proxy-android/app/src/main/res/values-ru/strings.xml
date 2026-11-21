@@ -16,6 +16,7 @@
     <string name="theme_dark">Тёмная</string>
     <string name="dynamic_colors">Динамические</string>
     <string name="palette">Палитра</string>
+    <string name="appearance">Оформление</string>
     <string name="settings">Настройки</string>
     <string name="connection">Подключение</string>
     <string name="port">Порт</string>

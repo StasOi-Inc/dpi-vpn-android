@@ -55,7 +55,6 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.lifecycleScope
 import com.amurcanov.tgwsproxy.ui.AppUpdateDialog
 import com.amurcanov.tgwsproxy.ui.ConnectionTab
-import com.amurcanov.tgwsproxy.ui.FloatingToolbar
 import com.amurcanov.tgwsproxy.ui.LogsTab
 import com.amurcanov.tgwsproxy.ui.SettingsTab
 import com.amurcanov.tgwsproxy.ui.TgWsProxyTheme
@@ -138,7 +137,6 @@ class MainActivity : ComponentActivity() {
                 .collectAsStateWithLifecycle(initialValue = true)
             val themePalette by settingsStore.themePalette
                 .collectAsStateWithLifecycle(initialValue = "indigo")
-            val scope = rememberCoroutineScope()
 
             LaunchedEffect(settingsStore) {
                 settingsStore.migrateLegacyDefaults()
@@ -160,21 +158,6 @@ class MainActivity : ComponentActivity() {
                         ) {
                             Box {
                                 MainContent(settingsStore)
-
-                                FloatingToolbar(
-                                    currentTheme = themeMode,
-                                    onThemeChange = { mode ->
-                                        scope.launch { settingsStore.saveThemeMode(mode) }
-                                    },
-                                    isDynamicColor = isDynamicColor,
-                                    onDynamicColorChange = { dc ->
-                                        scope.launch { settingsStore.saveDynamicColor(dc) }
-                                    },
-                                    currentPalette = themePalette,
-                                    onPaletteChange = { pal ->
-                                        scope.launch { settingsStore.saveThemePalette(pal) }
-                                    }
-                                )
                             }
                         }
                     }
