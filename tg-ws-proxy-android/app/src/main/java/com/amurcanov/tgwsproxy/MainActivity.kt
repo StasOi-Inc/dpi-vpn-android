@@ -1,6 +1,7 @@
 package com.amurcanov.tgwsproxy
 
 import android.Manifest
+import android.app.Activity
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
@@ -30,7 +31,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.input.pointer.pointerInput
 
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.PowerSettingsNew
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Terminal
@@ -52,14 +52,13 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.lifecycleScope
 import com.amurcanov.tgwsproxy.ui.AppUpdateDialog
 import com.amurcanov.tgwsproxy.ui.ConnectionTab
 import com.amurcanov.tgwsproxy.ui.FloatingToolbar
-import com.amurcanov.tgwsproxy.ui.InfoTab
 import com.amurcanov.tgwsproxy.ui.LogsTab
 import com.amurcanov.tgwsproxy.ui.SettingsTab
 import com.amurcanov.tgwsproxy.ui.TgWsProxyTheme
-import com.amurcanov.tgwsproxy.ui.openUrlInBrowser
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -67,6 +66,7 @@ import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.channels.Channel.Factory.BUFFERED
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import java.io.BufferedReader
@@ -81,6 +81,10 @@ import kotlin.math.sin
 import java.util.Locale
 
 class MainActivity : ComponentActivity() {
+
+    companion object {
+        const val EXTRA_RESTORE_SELECTED_TAB = "extra_restore_selected_tab"
+    }
 
     override fun attachBaseContext(newBase: Context) {
         val prefs = newBase.getSharedPreferences("lang_prefs", Context.MODE_PRIVATE)
@@ -102,8 +106,28 @@ class MainActivity : ComponentActivity() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             requestPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
         }
-        
+
         androidx.core.view.WindowCompat.setDecorFitsSystemWindows(window, false)
+
+        val restoreTab = intent.getIntExtra(EXTRA_RESTORE_SELECTED_TAB, -1)
+        lifecycleScope.launch(Dispatchers.IO) {
+            try {
+                val settingsStore = SettingsStore(applicationContext)
+                val pending = settingsStore.pendingPostUpdateRelaunch.first()
+                if (!pending) return@launch
+
+                if (settingsStore.restoreProxyRunning.first()) {
+                    ProxyController.startFromSavedSettings(
+                        context = applicationContext,
+                        showInvalidPortToast = false
+                    )
+                }
+                settingsStore.clearRelaunchState()
+                Log.i("MainActivity", "Post-update state restored (tab extra=$restoreTab)")
+            } catch (e: Exception) {
+                Log.w("MainActivity", "Failed to restore post-update state", e)
+            }
+        }
 
         setContent {
             val context = LocalContext.current
@@ -168,27 +192,24 @@ private data class NavItem(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MainContent(settingsStore: SettingsStore) {
-    var selectedTab by rememberSaveable { mutableIntStateOf(0) }
+    val activity = LocalContext.current as? Activity
+    val restoreTab = activity?.intent?.getIntExtra(MainActivity.EXTRA_RESTORE_SELECTED_TAB, -1) ?: -1
+    var selectedTab by rememberSaveable { mutableIntStateOf(restoreTab.coerceIn(0, 2)) }
     var dragTargetIndex by remember { mutableIntStateOf(-1) }
     var dragProgress by remember { mutableFloatStateOf(0f) }
     val context = LocalContext.current
     val density = LocalDensity.current
     val scope = rememberCoroutineScope()
-    val updatePostponeUntil by settingsStore.updatePostponeUntil.collectAsStateWithLifecycle(initialValue = 0L)
-    val updatePostponeVersion by settingsStore.updatePostponeVersion.collectAsStateWithLifecycle(initialValue = "")
-    val updateCheckIntervalHours by settingsStore.updateCheckIntervalHours.collectAsStateWithLifecycle(
-        initialValue = UPDATE_CHECK_NEVER
-    )
-    val updateLastCheckAt by settingsStore.updateLastCheckAt.collectAsStateWithLifecycle(initialValue = 0L)
     var pendingRelease by remember { mutableStateOf<AppReleaseInfo?>(null) }
+    var isDownloadingUpdate by remember { mutableStateOf(false) }
+    var updateDownloadProgress by remember { mutableFloatStateOf(0f) }
+    var updateDownloadFailed by remember { mutableStateOf(false) }
+    var isStartingInstall by remember { mutableStateOf(false) }
     val currentVersion = remember { "v${BuildConfig.VERSION_NAME.removePrefix("v")}" }
-    val currentUpdatePostponeUntil by rememberUpdatedState(updatePostponeUntil)
-    val currentUpdatePostponeVersion by rememberUpdatedState(updatePostponeVersion)
     val navItems = listOf(
         NavItem(stringResource(R.string.nav_proxy), Icons.Default.PowerSettingsNew),
         NavItem(stringResource(R.string.settings), Icons.Default.Settings),
-        NavItem(stringResource(R.string.nav_logs), Icons.Default.Terminal),
-        NavItem(stringResource(R.string.info), Icons.Default.Info)
+        NavItem(stringResource(R.string.nav_logs), Icons.Default.Terminal)
     )
     val safeBottomInset = with(density) { WindowInsets.safeDrawing.getBottom(density).toDp() }
     val navOverlayReserve = safeBottomInset + 96.dp
@@ -198,22 +219,9 @@ fun MainContent(settingsStore: SettingsStore) {
         onDispose { LogManager.stopListening() }
     }
 
-    LaunchedEffect(updateCheckIntervalHours, updateLastCheckAt) {
-        if (updateCheckIntervalHours == UPDATE_CHECK_NEVER) return@LaunchedEffect
-
-        val intervalMillis = updateIntervalHoursToMillis(updateCheckIntervalHours)
-            ?: updateIntervalHoursToMillis(DEFAULT_UPDATE_CHECK_INTERVAL_HOURS)
-            ?: 12L * 60L * 60L * 1000L
-
-        if (updateLastCheckAt > 0L) {
-            val nextCheckAt = updateLastCheckAt + intervalMillis
-            val now = System.currentTimeMillis()
-            if (nextCheckAt > now) {
-                delay(nextCheckAt - now)
-            }
-        }
-
-        if (!isActive) return@LaunchedEffect
+    LaunchedEffect(Unit) {
+        val postponeVersion = settingsStore.updatePostponeVersion.first()
+        val postponeUntil = settingsStore.updatePostponeUntil.first()
 
         val checkedAt = System.currentTimeMillis()
         val release = fetchLatestReleaseInfo(currentVersion)
@@ -228,7 +236,7 @@ fun MainContent(settingsStore: SettingsStore) {
         } else {
             val hasUpdate = isNewerVersion(currentVersion, release.versionTag)
             val isPostponed =
-                currentUpdatePostponeVersion == release.versionTag && checkedAt < currentUpdatePostponeUntil
+                postponeVersion == release.versionTag && checkedAt < postponeUntil
             Log.i(
                 "TgWsProxy",
                 "Update check: local=$currentVersion remote=${release.versionTag} newer=$hasUpdate postponed=$isPostponed"
@@ -236,7 +244,61 @@ fun MainContent(settingsStore: SettingsStore) {
 
             if (hasUpdate && !isPostponed) {
                 settingsStore.saveUpdateDialogShown(release.versionTag, checkedAt)
-                pendingRelease = release
+                if (pendingRelease == null) {
+                    pendingRelease = release
+                }
+            }
+        }
+    }
+
+    fun startSelfUpdate(release: AppReleaseInfo) {
+        scope.launch {
+            if (!release.hasApkAsset) {
+                com.amurcanov.tgwsproxy.ui.openUrlInBrowser(context, release.releaseUrl)
+                return@launch
+            }
+
+            updateDownloadFailed = false
+
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O &&
+                !context.packageManager.canRequestPackageInstalls()
+            ) {
+                Toast.makeText(
+                    context,
+                    context.getString(R.string.update_install_permission_needed),
+                    Toast.LENGTH_LONG
+                ).show()
+                val intent = Intent(
+                    Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
+                    Uri.parse("package:${context.packageName}")
+                )
+                try {
+                    context.startActivity(intent)
+                } catch (e: Exception) {
+                    Log.w("TgWsProxy", "[WARN] Failed to open install permission settings", e)
+                }
+                return@launch
+            }
+
+            try {
+                isDownloadingUpdate = true
+                updateDownloadProgress = 0f
+                val apkFile = SelfUpdateManager.downloadApk(context, release) { progress ->
+                    updateDownloadProgress = progress
+                }
+                isDownloadingUpdate = false
+                isStartingInstall = true
+                settingsStore.saveRelaunchState(
+                    selectedTab = selectedTab,
+                    proxyRunning = ProxyService.isRunning.value
+                )
+                val installIntent = SelfUpdateManager.buildInstallIntent(context, apkFile)
+                context.startActivity(installIntent)
+            } catch (e: Exception) {
+                isDownloadingUpdate = false
+                isStartingInstall = false
+                updateDownloadFailed = true
+                Log.w("TgWsProxy", "[WARN] Self-update failed", e)
             }
         }
     }
@@ -301,9 +363,13 @@ fun MainContent(settingsStore: SettingsStore) {
             ) { page ->
                 when (page) {
                     0 -> ConnectionTab(settingsStore)
-                    1 -> SettingsTab(settingsStore)
+                    1 -> SettingsTab(
+                        settingsStore = settingsStore,
+                        onManualUpdateFound = { manualRelease ->
+                            pendingRelease = manualRelease
+                        }
+                    )
                     2 -> LogsTab(settingsStore)
-                    3 -> InfoTab(settingsStore)
                 }
             }
 
@@ -325,6 +391,10 @@ fun MainContent(settingsStore: SettingsStore) {
     pendingRelease?.let { release ->
         AppUpdateDialog(
             release = release,
+            isDownloading = isDownloadingUpdate,
+            downloadProgress = updateDownloadProgress,
+            downloadFailed = updateDownloadFailed,
+            isStartingInstall = isStartingInstall,
             onPostpone = {
                 pendingRelease = null
                 Toast.makeText(context, context.getString(R.string.update_postponed_24h), Toast.LENGTH_SHORT).show()
@@ -342,14 +412,13 @@ fun MainContent(settingsStore: SettingsStore) {
                 }
             },
             onUpdate = {
-                pendingRelease = null
                 scope.launch {
                     settingsStore.saveUpdateDialogAction(
                         version = release.versionTag,
                         action = UPDATE_DIALOG_ACTION_UPDATE,
                         actedAt = System.currentTimeMillis()
                     )
-                    openUrlInBrowser(context, release.releaseUrl)
+                    startSelfUpdate(release)
                 }
             }
         )

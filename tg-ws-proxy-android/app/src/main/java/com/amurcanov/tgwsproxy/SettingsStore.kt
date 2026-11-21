@@ -57,6 +57,9 @@ class SettingsStore(private val context: Context) {
         val UPDATE_DIALOG_LAST_ACTION_VERSION = stringPreferencesKey("update_dialog_last_action_version")
         val UPDATE_DIALOG_LAST_ACTION = stringPreferencesKey("update_dialog_last_action")
         val UPDATE_DIALOG_LAST_ACTION_AT = longPreferencesKey("update_dialog_last_action_at")
+        val PENDING_POST_UPDATE_RELAUNCH = booleanPreferencesKey("pending_post_update_relaunch")
+        val RESTORE_PROXY_RUNNING = booleanPreferencesKey("restore_proxy_running")
+        val RESTORE_SELECTED_TAB = intPreferencesKey("restore_selected_tab")
         val DIRECT_DC_DEFAULTS_MIGRATED = booleanPreferencesKey("direct_dc_defaults_migrated")
         val DIRECT_DC_DEFAULTS_V2_MIGRATED = booleanPreferencesKey("direct_dc_defaults_v2_migrated")
     }
@@ -105,6 +108,9 @@ class SettingsStore(private val context: Context) {
     val updateDialogLastActionVersion: Flow<String> = context.dataStore.data.map { it[Keys.UPDATE_DIALOG_LAST_ACTION_VERSION] ?: "" }
     val updateDialogLastAction: Flow<String> = context.dataStore.data.map { it[Keys.UPDATE_DIALOG_LAST_ACTION] ?: "" }
     val updateDialogLastActionAt: Flow<Long> = context.dataStore.data.map { it[Keys.UPDATE_DIALOG_LAST_ACTION_AT] ?: 0L }
+    val pendingPostUpdateRelaunch: Flow<Boolean> = context.dataStore.data.map { it[Keys.PENDING_POST_UPDATE_RELAUNCH] ?: false }
+    val restoreProxyRunning: Flow<Boolean> = context.dataStore.data.map { it[Keys.RESTORE_PROXY_RUNNING] ?: false }
+    val restoreSelectedTab: Flow<Int> = context.dataStore.data.map { it[Keys.RESTORE_SELECTED_TAB] ?: 0 }
 
     suspend fun saveSecretKey(key: String) {
         context.dataStore.edit { it[Keys.SECRET_KEY] = key }
@@ -166,6 +172,22 @@ class SettingsStore(private val context: Context) {
             it[Keys.UPDATE_DIALOG_LAST_ACTION_VERSION] = version
             it[Keys.UPDATE_DIALOG_LAST_ACTION] = action
             it[Keys.UPDATE_DIALOG_LAST_ACTION_AT] = actedAt
+        }
+    }
+
+    suspend fun saveRelaunchState(selectedTab: Int, proxyRunning: Boolean) {
+        context.dataStore.edit {
+            it[Keys.PENDING_POST_UPDATE_RELAUNCH] = true
+            it[Keys.RESTORE_SELECTED_TAB] = selectedTab
+            it[Keys.RESTORE_PROXY_RUNNING] = proxyRunning
+        }
+    }
+
+    suspend fun clearRelaunchState() {
+        context.dataStore.edit {
+            it[Keys.PENDING_POST_UPDATE_RELAUNCH] = false
+            it[Keys.RESTORE_PROXY_RUNNING] = false
+            it[Keys.RESTORE_SELECTED_TAB] = 0
         }
     }
 

@@ -63,7 +63,10 @@ fun openTelegram(context: Context, url: String) {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun SettingsTab(settingsStore: SettingsStore) {
+fun SettingsTab(
+    settingsStore: SettingsStore,
+    onManualUpdateFound: (com.amurcanov.tgwsproxy.AppReleaseInfo) -> Unit
+) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val isRunning by ProxyService.isRunning.collectAsStateWithLifecycle()
@@ -439,6 +442,96 @@ fun SettingsTab(settingsStore: SettingsStore) {
                         scope.launch { settingsStore.saveAutoStartOnBoot(enabled) }
                     }
                 )
+            }
+        }
+
+        Spacer(Modifier.height(12.dp))
+
+        AppSectionCard {
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Icon(
+                        Icons.Default.Refresh, null,
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(20.dp)
+                    )
+                    Text(
+                        stringResource(com.amurcanov.tgwsproxy.R.string.check_updates),
+                        style = MaterialTheme.typography.titleSmall,
+                        color = MaterialTheme.colorScheme.primary,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                }
+
+                var isCheckingUpdates by remember { mutableStateOf(false) }
+                val updateLatestVersion by settingsStore.updateLatestVersion.collectAsStateWithLifecycle(initialValue = "")
+                val updateLastError by settingsStore.updateLastError.collectAsStateWithLifecycle(initialValue = "")
+                val currentVersion = remember { "v${com.amurcanov.tgwsproxy.BuildConfig.VERSION_NAME.removePrefix("v")}" }
+                val updateStatusSubtitle = when {
+                    isCheckingUpdates -> stringResource(com.amurcanov.tgwsproxy.R.string.update_checking)
+                    updateLatestVersion.isNotBlank() && com.amurcanov.tgwsproxy.isNewerVersion(currentVersion, updateLatestVersion) ->
+                        stringResource(com.amurcanov.tgwsproxy.R.string.update_available_on_github, updateLatestVersion)
+                    updateLatestVersion.isNotBlank() -> stringResource(com.amurcanov.tgwsproxy.R.string.update_latest_version, updateLatestVersion)
+                    updateLastError.isNotBlank() -> stringResource(com.amurcanov.tgwsproxy.R.string.update_last_check_failed)
+                    else -> stringResource(com.amurcanov.tgwsproxy.R.string.update_check_manually)
+                }
+
+                OutlinedButton(
+                    onClick = {
+                        if (isCheckingUpdates) return@OutlinedButton
+                        isCheckingUpdates = true
+                        scope.launch {
+                            val checkedAt = System.currentTimeMillis()
+                            val release = com.amurcanov.tgwsproxy.fetchLatestReleaseInfo(currentVersion)
+                            settingsStore.saveUpdateState(
+                                lastCheckAt = checkedAt,
+                                latestVersion = release?.versionTag ?: "",
+                                error = if (release == null) {
+                                    context.getString(com.amurcanov.tgwsproxy.R.string.update_check_failed_short)
+                                } else ""
+                            )
+                            isCheckingUpdates = false
+
+                            if (release == null) {
+                                val message = if (updateLatestVersion.isNotBlank()) {
+                                    context.getString(com.amurcanov.tgwsproxy.R.string.update_check_failed_known, updateLatestVersion)
+                                } else {
+                                    context.getString(com.amurcanov.tgwsproxy.R.string.update_check_failed)
+                                }
+                                Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
+                                return@launch
+                            }
+
+                            if (com.amurcanov.tgwsproxy.isNewerVersion(currentVersion, release.versionTag)) {
+                                settingsStore.saveUpdateDialogShown(release.versionTag, checkedAt)
+                                onManualUpdateFound(release)
+                            } else {
+                                Toast.makeText(
+                                    context,
+                                    context.getString(com.amurcanov.tgwsproxy.R.string.update_already_latest, release.versionTag),
+                                    Toast.LENGTH_SHORT
+                                ).show()
+                            }
+                        }
+                    },
+                    enabled = !isCheckingUpdates,
+                    modifier = Modifier.fillMaxWidth().height(48.dp),
+                    shape = RoundedCornerShape(24.dp)
+                ) {
+                    Icon(
+                        Icons.Default.Refresh, null,
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    Text(
+                        updateStatusSubtitle,
+                        fontWeight = FontWeight.SemiBold,
+                        maxLines = 1
+                    )
+                }
             }
         }
 

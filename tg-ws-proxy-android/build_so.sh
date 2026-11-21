@@ -17,7 +17,18 @@ if [ -z "$SDK_PATH" ]; then
 fi
 echo "Using SDK: $SDK_PATH"
 
-NDK_BIN=$(ls -d "$SDK_PATH"/ndk/*/toolchains/llvm/prebuilt/linux-x86_64/bin 2>/dev/null | sort -V | tail -n1)
+case "$(uname -s)-$(uname -m)" in
+    Darwin-arm64) HOST_TAGS="darwin-arm64 darwin-x86_64" ;;
+    Darwin*)      HOST_TAGS="darwin-x86_64 darwin-arm64" ;;
+    *)            HOST_TAGS="linux-x86_64" ;;
+esac
+NDK_BIN=""
+for HOST_TAG in $HOST_TAGS; do
+    NDK_BIN=$( (ls -d "$SDK_PATH"/ndk/*/toolchains/llvm/prebuilt/"$HOST_TAG"/bin 2>/dev/null | sort -V | tail -n1) || true )
+    if [ -n "$NDK_BIN" ]; then
+        break
+    fi
+done
 if [ -z "$NDK_BIN" ]; then
     echo "Error: no NDK toolchain found in $SDK_PATH/ndk"
     exit 1

@@ -103,6 +103,11 @@
     <string name="update_available_description">A new app version %1$s is out. You can open the release page and update manually.</string>
     <string name="update_action">Update</string>
     <string name="later">Later</string>
+    <string name="update_downloading">Downloading update…</string>
+    <string name="update_download_progress">Downloaded %1$d%%</string>
+    <string name="update_download_failed">Failed to download update</string>
+    <string name="update_install_permission_needed">Allow installing apps from this source to continue</string>
+    <string name="update_starting_install">Starting installation…</string>
     <string name="background_request_failed">Could not request background work</string>
     <string name="nav_proxy">Proxy</string>
     <string name="nav_logs">Logs</string>

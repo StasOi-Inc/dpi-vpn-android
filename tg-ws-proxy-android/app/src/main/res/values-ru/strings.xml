@@ -103,6 +103,11 @@
     <string name="update_available_description">Вышла новая версия приложения %1$s. Можно открыть страницу релиза и обновиться вручную.</string>
     <string name="update_action">Обновить</string>
     <string name="later">Позже</string>
+    <string name="update_downloading">Скачиваем обновление…</string>
+    <string name="update_download_progress">Загружено %1$d%%</string>
+    <string name="update_download_failed">Не удалось скачать обновление</string>
+    <string name="update_install_permission_needed">Разрешите установку приложений из этого источника, чтобы продолжить</string>
+    <string name="update_starting_install">Запускаем установку…</string>
     <string name="background_request_failed">Не удалось запросить работу в фоне</string>
     <string name="nav_proxy">Прокси</string>
     <string name="nav_logs">Логи</string>

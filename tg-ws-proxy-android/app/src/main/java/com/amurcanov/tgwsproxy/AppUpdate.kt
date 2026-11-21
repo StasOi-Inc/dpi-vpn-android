@@ -1,6 +1,7 @@
 package com.amurcanov.tgwsproxy
 
 import android.content.Context
+import android.os.Build
 import android.util.Log
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -16,6 +17,7 @@ private const val GITHUB_RELEASES_URL = "https://api.github.com/repos/amurcanov/
 private const val GITHUB_LATEST_RELEASE_URL = "https://api.github.com/repos/amurcanov/tg-ws-proxy-android/releases/latest"
 private const val GITHUB_LATEST_RELEASE_WEB_URL = "https://github.com/amurcanov/tg-ws-proxy-android/releases/latest"
 private const val GITHUB_RELEASE_TAG_URL_PREFIX = "https://github.com/amurcanov/tg-ws-proxy-android/releases/tag/"
+private const val GITHUB_RELEASE_TAG_API_PREFIX = "https://api.github.com/repos/amurcanov/tg-ws-proxy-android/releases/tags/"
 private const val GITHUB_TAGS_URL = "https://api.github.com/repos/amurcanov/tg-ws-proxy-android/tags?per_page=100"
 private const val GITHUB_TAG_TREE_URL_PREFIX = "https://github.com/amurcanov/tg-ws-proxy-android/tree/"
 private const val GITHUB_API_RATE_LIMIT_FALLBACK_MS = 30L * 60L * 1000L
@@ -47,8 +49,13 @@ fun updateIntervalLabel(hours: Int): String = when (hours) {
 data class AppReleaseInfo(
     val versionTag: String,
     val releaseUrl: String,
-    val source: RemoteVersionSource
-)
+    val source: RemoteVersionSource,
+    val apkUrl: String? = null,
+    val apkSizeBytes: Long? = null,
+    val apkSha256: String? = null
+) {
+    val hasApkAsset: Boolean get() = apkUrl != null
+}
 
 enum class RemoteVersionSource {
     Release,
@@ -70,6 +77,12 @@ suspend fun fetchLatestReleaseInfo(localVersion: String? = null): AppReleaseInfo
         isNewerVersion(latestRelease.versionTag, latestTag.versionTag) -> latestTag
         else -> latestRelease
     }
+}
+
+suspend fun fetchReleaseInfoWithApk(versionTag: String): AppReleaseInfo? = withContext(Dispatchers.IO) {
+    val tag = normalizeVersionTag(versionTag)
+    if (tag.isBlank()) return@withContext null
+    fetchReleaseAssetsFromTagEndpoint(tag)
 }
 
 fun isNewerVersion(local: String, remote: String): Boolean {
@@ -310,11 +323,52 @@ private fun JSONObject.toAppReleaseInfo(): AppReleaseInfo? {
     val releaseUrl = optString("html_url").trim()
     if (versionTag.isBlank() || releaseUrl.isBlank()) return null
 
+    val assets = optJSONArray("assets")
+    val apkAsset = assets?.let { pickApkAsset(it) }
+
     return AppReleaseInfo(
         versionTag = versionTag,
         releaseUrl = releaseUrl,
-        source = RemoteVersionSource.Release
+        source = RemoteVersionSource.Release,
+        apkUrl = apkAsset?.optString("browser_download_url")?.takeIf { it.isNotBlank() },
+        apkSizeBytes = apkAsset?.optLong("size")?.takeIf { it > 0L },
+        apkSha256 = apkAsset?.optString("digest")
+            ?.takeIf { it.startsWith("sha256:", ignoreCase = true) }
+            ?.substringAfter("sha256:")
+            ?.lowercase()
     )
+}
+
+private fun pickApkAsset(assets: JSONArray): JSONObject? {
+    val abiCandidates = buildList {
+        for (abi in Build.SUPPORTED_ABIS) {
+            if (!contains(abi)) add(abi)
+        }
+        if (none { it == "universal" }) add("universal")
+    }
+
+    for (abi in abiCandidates) {
+        for (i in 0 until assets.length()) {
+            val asset = assets.optJSONObject(i) ?: continue
+            val name = asset.optString("name").lowercase()
+            if (!name.endsWith(".apk")) continue
+            if (name.contains(abi)) {
+                return asset
+            }
+        }
+    }
+    return null
+}
+
+private suspend fun fetchReleaseAssetsFromTagEndpoint(tag: String): AppReleaseInfo? = withContext(Dispatchers.IO) {
+    val response = fetchGitHubApi("$GITHUB_RELEASE_TAG_API_PREFIX$tag") ?: return@withContext null
+    val json = try {
+        JSONObject(response)
+    } catch (e: Exception) {
+        Log.w(UPDATE_LOG_TAG, "[WARN] Update check: failed to parse release by tag", e)
+        return@withContext null
+    }
+    json.toAppReleaseInfo()
 }
 
 private fun versionParts(version: String): List<Int> {

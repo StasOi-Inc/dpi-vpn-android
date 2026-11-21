@@ -15,6 +15,7 @@ import androidx.compose.material.icons.filled.Update
 import androidx.compose.material3.Button
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
@@ -30,21 +31,26 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.amurcanov.tgwsproxy.AppReleaseInfo
 import com.amurcanov.tgwsproxy.RemoteVersionSource
+import com.amurcanov.tgwsproxy.R
 
 @Composable
 fun AppUpdateDialog(
     release: AppReleaseInfo,
     onPostpone: () -> Unit,
-    onUpdate: () -> Unit
+    onUpdate: () -> Unit,
+    isDownloading: Boolean = false,
+    downloadProgress: Float = 0f,
+    downloadFailed: Boolean = false,
+    isStartingInstall: Boolean = false
 ) {
-    val isTagOnly = release.source == RemoteVersionSource.Tag
-    val title = if (isTagOnly) stringResource(com.amurcanov.tgwsproxy.R.string.update_new_tag_title) else stringResource(com.amurcanov.tgwsproxy.R.string.update_available_title)
+    val isTagOnly = release.source == RemoteVersionSource.Tag || !release.hasApkAsset
+    val title = if (isTagOnly) stringResource(R.string.update_new_tag_title) else stringResource(R.string.update_available_title)
     val description = if (isTagOnly) {
-        stringResource(com.amurcanov.tgwsproxy.R.string.update_new_tag_description, release.versionTag)
+        stringResource(R.string.update_new_tag_description, release.versionTag)
     } else {
-        stringResource(com.amurcanov.tgwsproxy.R.string.update_available_description, release.versionTag)
+        stringResource(R.string.update_available_description, release.versionTag)
     }
-    val actionLabel = stringResource(com.amurcanov.tgwsproxy.R.string.update_action)
+    val actionLabel = stringResource(R.string.update_action)
 
     Dialog(
         onDismissRequest = {},
@@ -97,27 +103,64 @@ fun AppUpdateDialog(
                     lineHeight = 20.sp
                 )
 
+                if (isDownloading) {
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        LinearProgressIndicator(
+                            progress = { downloadProgress.coerceIn(0f, 1f) },
+                            modifier = Modifier.fillMaxWidth(),
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                        Text(
+                            text = stringResource(
+                                R.string.update_download_progress,
+                                (downloadProgress.coerceIn(0f, 1f) * 100f).toInt()
+                            ),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                } else if (isStartingInstall) {
+                    LinearProgressIndicator(
+                        modifier = Modifier.fillMaxWidth(),
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                    Text(
+                        text = stringResource(R.string.update_starting_install),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                } else if (downloadFailed) {
+                    Text(
+                        text = stringResource(R.string.update_download_failed),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error
+                    )
+                }
+
                 HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f))
 
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
-                    OutlinedButton(
-                        onClick = onPostpone,
-                        modifier = Modifier
-                            .weight(1f)
-                            .height(50.dp),
-                        shape = RoundedCornerShape(22.dp)
-                    ) {
-                        Text(
-                            text = stringResource(com.amurcanov.tgwsproxy.R.string.later),
-                            fontWeight = FontWeight.SemiBold
-                        )
+                    if (!isDownloading && !isStartingInstall) {
+                        OutlinedButton(
+                            onClick = onPostpone,
+                            modifier = Modifier
+                                .weight(1f)
+                                .height(50.dp),
+                            shape = RoundedCornerShape(22.dp)
+                        ) {
+                            Text(
+                                text = stringResource(R.string.later),
+                                fontWeight = FontWeight.SemiBold
+                            )
+                        }
                     }
 
                     Button(
                         onClick = onUpdate,
+                        enabled = !isDownloading && !isStartingInstall,
                         modifier = Modifier
                             .weight(1f)
                             .height(50.dp),
