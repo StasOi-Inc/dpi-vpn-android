@@ -13,13 +13,14 @@ import java.net.URL
 const val UPDATE_CHECK_NEVER = -1
 const val DEFAULT_UPDATE_CHECK_INTERVAL_HOURS = 12
 private const val UPDATE_LOG_TAG = "TgWsProxy"
-private const val GITHUB_RELEASES_URL = "https://api.github.com/repos/amurcanov/tg-ws-proxy-android/releases?per_page=30"
-private const val GITHUB_LATEST_RELEASE_URL = "https://api.github.com/repos/amurcanov/tg-ws-proxy-android/releases/latest"
-private const val GITHUB_LATEST_RELEASE_WEB_URL = "https://github.com/amurcanov/tg-ws-proxy-android/releases/latest"
-private const val GITHUB_RELEASE_TAG_URL_PREFIX = "https://github.com/amurcanov/tg-ws-proxy-android/releases/tag/"
-private const val GITHUB_RELEASE_TAG_API_PREFIX = "https://api.github.com/repos/amurcanov/tg-ws-proxy-android/releases/tags/"
-private const val GITHUB_TAGS_URL = "https://api.github.com/repos/amurcanov/tg-ws-proxy-android/tags?per_page=100"
-private const val GITHUB_TAG_TREE_URL_PREFIX = "https://github.com/amurcanov/tg-ws-proxy-android/tree/"
+private const val GITHUB_RELEASES_URL = "https://api.github.com/repos/StasOi-Inc/dpi-vpn-android/releases?per_page=30"
+private const val GITHUB_LATEST_RELEASE_URL = "https://api.github.com/repos/StasOi-Inc/dpi-vpn-android/releases/latest"
+private const val GITHUB_LATEST_RELEASE_WEB_URL = "https://github.com/StasOi-Inc/dpi-vpn-android/releases/latest"
+private const val GITHUB_RELEASE_TAG_URL_PREFIX = "https://github.com/StasOi-Inc/dpi-vpn-android/releases/tag/"
+private const val GITHUB_RELEASE_TAG_API_PREFIX = "https://api.github.com/repos/StasOi-Inc/dpi-vpn-android/releases/tags/"
+private const val GITHUB_TAGS_URL = "https://api.github.com/repos/StasOi-Inc/dpi-vpn-android/tags?per_page=100"
+private const val GITHUB_TAG_TREE_URL_PREFIX = "https://github.com/StasOi-Inc/dpi-vpn-android/tree/"
+private const val RELEASE_TAG_PREFIX = "tgws-v"
 private const val GITHUB_API_RATE_LIMIT_FALLBACK_MS = 30L * 60L * 1000L
 private val VERSION_NUMBER_REGEX = Regex("\\d+(?:\\.\\d+)*")
 @Volatile
@@ -115,6 +116,7 @@ private fun fetchLatestStableReleaseFromList(): AppReleaseInfo? {
     for (i in 0 until releases.length()) {
         val json = releases.optJSONObject(i) ?: continue
         if (json.optBoolean("draft") || json.optBoolean("prerelease")) continue
+        if (!isAppReleaseTag(json.optString("tag_name"))) continue
 
         val release = json.toAppReleaseInfo() ?: continue
         if (bestRelease == null || isNewerVersion(bestRelease.versionTag, release.versionTag)) {
@@ -137,7 +139,9 @@ private fun fetchLatestTagFromList(): AppReleaseInfo? {
     var bestTag: AppReleaseInfo? = null
     for (i in 0 until tags.length()) {
         val json = tags.optJSONObject(i) ?: continue
-        val tagName = normalizeVersionTag(json.optString("name"))
+        val rawName = json.optString("name")
+        if (!isAppReleaseTag(rawName)) continue
+        val tagName = normalizeVersionTag(rawName)
         if (tagName.isBlank()) continue
 
         val tag = AppReleaseInfo(
@@ -182,7 +186,7 @@ private fun fetchReleaseFromLatestWebRedirect(): AppReleaseInfo? {
         if (!location.isNullOrBlank()) {
             val releaseUrl = URL(URL(GITHUB_LATEST_RELEASE_WEB_URL), location).toString()
             val versionTag = extractTagFromReleaseUrl(releaseUrl)
-            if (!versionTag.isNullOrBlank()) {
+            if (!versionTag.isNullOrBlank() && isAppReleaseTag(versionTag)) {
                 return AppReleaseInfo(
                     versionTag = versionTag,
                     releaseUrl = releaseUrl,
@@ -194,7 +198,8 @@ private fun fetchReleaseFromLatestWebRedirect(): AppReleaseInfo? {
         if (responseCode in 200..299) {
             val response = conn.inputStream.bufferedReader().use { it.readText() }
             val versionTag = Regex("/releases/tag/([^\"?#<]+)").find(response)?.groupValues?.getOrNull(1)
-            if (!versionTag.isNullOrBlank()) {
+                ?.let(::normalizeVersionTag)
+            if (!versionTag.isNullOrBlank() && isAppReleaseTag(versionTag)) {
                 return AppReleaseInfo(
                     versionTag = versionTag,
                     releaseUrl = "$GITHUB_RELEASE_TAG_URL_PREFIX$versionTag",
@@ -319,7 +324,9 @@ private fun noteGitHubApiCooldown(conn: HttpURLConnection, responseCode: Int, re
 }
 
 private fun JSONObject.toAppReleaseInfo(): AppReleaseInfo? {
-    val versionTag = normalizeVersionTag(optString("tag_name"))
+    val rawTag = optString("tag_name")
+    if (!isAppReleaseTag(rawTag)) return null
+    val versionTag = normalizeVersionTag(rawTag)
     val releaseUrl = optString("html_url").trim()
     if (versionTag.isBlank() || releaseUrl.isBlank()) return null
 
@@ -379,10 +386,17 @@ private fun versionParts(version: String): List<Int> {
     return normalized.split(".").mapNotNull { it.toIntOrNull() }
 }
 
+private fun isAppReleaseTag(tag: String): Boolean =
+    tag.trim().lowercase().startsWith(RELEASE_TAG_PREFIX)
+
 private fun normalizeVersionTag(version: String): String {
     val trimmed = version.trim()
     if (trimmed.isBlank()) return ""
-    return if (trimmed.startsWith("v", ignoreCase = true)) trimmed else "v$trimmed"
+    return when {
+        isAppReleaseTag(trimmed) -> trimmed
+        trimmed.startsWith("v", ignoreCase = true) -> trimmed
+        else -> "v$trimmed"
+    }
 }
 
 private fun extractTagFromReleaseUrl(releaseUrl: String): String? {
