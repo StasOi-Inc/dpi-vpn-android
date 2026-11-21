@@ -357,7 +357,10 @@ private fun pickApkAsset(assets: JSONArray): JSONObject? {
             }
         }
     }
-    return null
+
+    val apkAssets = (0 until assets.length()).mapNotNull { assets.optJSONObject(it) }
+        .filter { it.optString("name").lowercase().endsWith(".apk") }
+    return apkAssets.singleOrNull()
 }
 
 private suspend fun fetchReleaseAssetsFromTagEndpoint(tag: String): AppReleaseInfo? = withContext(Dispatchers.IO) {

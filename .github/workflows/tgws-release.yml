@@ -37,23 +37,29 @@ jobs:
           bash build_so.sh
         shell: bash
 
-      - name: Build universal release APK
+      - name: Build release APKs
         run: |
           if [ -f ~/.macbuild/env.sh ]; then . ~/.macbuild/env.sh; fi
-          ./gradlew assembleUniversalRelease --no-daemon --stacktrace
+          ./gradlew assembleArm32Release assembleArm64Release assembleUniversalRelease --no-daemon --stacktrace
 
-      - name: Verify APK
+      - name: Verify APKs
         run: |
           if [ -f ~/.macbuild/env.sh ]; then . ~/.macbuild/env.sh; fi
-          APK=$(ls app/build/outputs/apk/universal/release/*.apk)
-          ls -la "$APK"
-          "$ANDROID_HOME/build-tools/35.0.0/aapt2" dump badging "$APK" | head -3
+          for f in arm32 arm64 universal; do
+            APK=$(ls app/build/outputs/apk/$f/release/*.apk)
+            echo "== $f: $APK"
+            ls -la "$APK"
+            "$ANDROID_HOME/build-tools/35.0.0/aapt2" dump badging "$APK" | head -3
+          done
 
-      - name: Upload unsigned APK
+      - name: Upload unsigned APKs
         uses: actions/upload-artifact@v4
         with:
-          name: tg-ws-proxy-universal-release-unsigned
-          path: tg-ws-proxy-android/app/build/outputs/apk/universal/release/*.apk
+          name: tg-ws-proxy-release-apks
+          path: |
+            tg-ws-proxy-android/app/build/outputs/apk/arm32/release/*.apk
+            tg-ws-proxy-android/app/build/outputs/apk/arm64/release/*.apk
+            tg-ws-proxy-android/app/build/outputs/apk/universal/release/*.apk
 
   release:
     if: startsWith(github.ref, 'refs/tags/tgws-v')
@@ -62,19 +68,22 @@ jobs:
     permissions:
       contents: write
     steps:
-      - name: Download built APK
+      - name: Download built APKs
         uses: actions/download-artifact@v4
         with:
-          name: tg-ws-proxy-universal-release-unsigned
+          name: tg-ws-proxy-release-apks
           path: apks
 
-      - name: Remove legacy asset
+      - name: Remove legacy assets
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
-        run: gh release delete-asset "${{ github.ref_name }}" signed.apk --yes || true
+        run: |
+          for old in signed.apk "tg-ws-proxy-*-release-signed.apk"; do
+            gh release delete-asset "${{ github.ref_name }}" "$old" --yes || true
+          done
 
-      - name: Sign APK
+      - name: Sign APKs
         env:
           KEYSTORE_B64: ${{ secrets.APK_KEYSTORE_B64 }}
           KS_PASS: ${{ secrets.APK_KEYSTORE_PASS }}
@@ -82,19 +91,28 @@ jobs:
           printf '%s' "$KEYSTORE_B64" | tr -d '[:space:]' | base64 -d > keystore.jks
           [ -s keystore.jks ]
           KS_PASS=$(printf '%s' "$KS_PASS" | tr -d '[:space:]')
-          APK=$(ls apks/*.apk)
           VERSION="${GITHUB_REF_NAME#tgws-v}"
-          NAME="tg-ws-proxy-${VERSION}-release-signed.apk"
-          "$ANDROID_HOME/build-tools/35.0.0/zipalign" -f 4 "$APK" aligned.apk
-          "$ANDROID_HOME/build-tools/35.0.0/apksigner" sign \
-            --ks keystore.jks --ks-key-alias selfsign \
-            --ks-pass "pass:$KS_PASS" --key-pass "pass:$KS_PASS" \
-            --out "$NAME" aligned.apk
-          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --print-certs "$NAME"
+          BT="$ANDROID_HOME/build-tools/35.0.0"
+          sign_flavor() {
+            local flavor="$1" abi="$2"
+            APK=$(find apks -name "app-${flavor}-release*.apk" | head -1)
+            [ -n "$APK" ] || { echo "::error::APK for $flavor not found"; return 1; }
+            OUT="tg-ws-proxy-${VERSION}-release-${abi}.apk"
+            "$BT/zipalign" -f 4 "$APK" "${OUT}.aligned"
+            "$BT/apksigner" sign \
+              --ks keystore.jks --ks-key-alias selfsign \
+              --ks-pass "pass:$KS_PASS" --key-pass "pass:$KS_PASS" \
+              --out "$OUT" "${OUT}.aligned"
+            rm -f "${OUT}.aligned"
+            "$BT/apksigner" verify --print-certs "$OUT"
+          }
+          sign_flavor arm32 armeabi-v7a
+          sign_flavor arm64 arm64-v8a
+          sign_flavor universal universal
 
-      - name: Create GitHub release with signed APK
+      - name: Create GitHub release with signed APKs
         uses: softprops/action-gh-release@v2
         with:
-          files: tg-ws-proxy-*-release-signed.apk
+          files: tg-ws-proxy-*-release-*.apk
           name: tg-ws-proxy ${{ github.ref_name }}
-          body: Signed release build (universal APK). Built by GitHub Actions.
+          body: Signed release builds (armeabi-v7a, arm64-v8a, universal). Built by GitHub Actions.
